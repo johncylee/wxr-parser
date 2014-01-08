@@ -1,25 +1,125 @@
 import argparse
 import logging
+import sys
+from HTMLParser import HTMLParser
 from xml.parsers import expat
 
 
-class WPXMLParser:
+class WPHTMLTranslator(HTMLParser):
+    """translate wordpress flavored html to regular (but not standalone)
+    html.
+
+    """
+
+    NotParagraph = ('ul', 'ol', 'table', 'pre', 'blockquote', 'h1', 'h2', 'h3',
+                    'h4', 'h5', 'h6')
+
+    def __init__(self):
+        self._reset()
+        HTMLParser.__init__(self)
+
+    def _reset(self):
+        self._tagstack = []
+        self._data = u''
+        self._fragment = u''
+        self._paragraph = True
+
+    def reset(self):
+        self._reset()
+        HTMLParser.reset(self)
+
+    def _flush(self):
+        if not self._fragment.strip('\t\r\n '):
+            return
+        data, self._fragment = self._fragment, u''
+        if self._paragraph:
+            if data.startswith('\n'):
+                data = '\n<p>' + data[1:]
+            else:
+                data = '<p>' + data
+            if data.endswith('\n'):
+                data = data[:-1] + '</p>\n'
+            else:
+                data = data + '</p>'
+            data = data.replace('\n\n', '</p>\n\n<p>')
+        self._data += data
+
+    def handle_starttag(self, tag, attrs):
+        self._tagstack.append(tag)
+        if tag in self.NotParagraph:
+            self._flush()
+            self._paragraph = False
+        html = '<' + tag
+        for attr in attrs:
+            html += ' %s="%s"' % attr
+        html += '>'
+        self._fragment += html
+
+    def handle_endtag(self, tag):
+        self._fragment += '</%s>' % tag
+        if tag != self._tagstack.pop():
+            logging.error('possible malformed html: %s', self._tagstack)
+            sys.exit()
+        if tag in self.NotParagraph:
+            self._flush()
+        self._paragraph = True
+        for t in self.NotParagraph:
+            if t in self._tagstack:
+                self._paragraph = False
+                break
+
+    def handle_startendtag(self, tag, attrs):
+        html = '<' + tag
+        for attr in attrs:
+            html += ' %s="%s"' % attr
+        html += '/>'
+        self._fragment += html
+
+    def handle_data(self, data):
+        self._fragment += data
+
+    def translate(self, data):
+        self.feed(data)
+        self._flush()
+        translated = self._data
+        self.reset()
+        logging.debug('translated: %s', translated)
+        return translated
+
+
+class WPXMLParser(object):
 
     def __init__(self):
         self._categories = []
         self._tags = []
+        self._items = []
         self._current = None
         self._name = None
-        self._cdata = None
-        parser = expat.ParserCreate()
-        parser.StartElementHandler = self._start_element_handler
-        parser.EndElementHandler = self._end_element_handler
-        parser.CharacterDataHandler = self._character_data_handler
-        parser.StartCdataSectionHandler = self._start_cdata_section_handler
-        parser.EndCdataSectionHandler = self._end_cdata_section_handler
-        self._parser = parser
+        self._data = u''
+        xmlparser = expat.ParserCreate()
+        xmlparser.StartElementHandler = self._start_element_handler
+        xmlparser.EndElementHandler = self._end_element_handler
+        xmlparser.CharacterDataHandler = self._character_data_handler
+        self._xmlparser = xmlparser
+        self._htmltranslator = WPHTMLTranslator()
+
+    def _to_html(self, name):
+        """what's in _current[_name] now is supposed to be wordpress flavored
+        html, which means it contains some wordpress specific [tag],
+        and blank line means <p>.
+
+        """
+        data = self._current[self._name]
+        self._current[name] = self._htmltranslator.translate(data)
+
+    def _flush(self):
+        if self._current is not None and self._name is not None:
+            logging.debug('%s = "%s"', self._name, self._data)
+            self._current[self._name] = self._data
+        self._data = u''
 
     def _start_element_handler(self, name, attrs):
+        self._flush()
         if name == 'wp:category':
             self._current = {}
             self._categories.append(self._current)
@@ -89,6 +189,7 @@ class WPXMLParser:
                 self._name = 'tag'
 
     def _end_element_handler(self, name):
+        self._flush()
         if name == 'wp:category':
             self._current = None
         elif name == 'wp:tag':
@@ -106,7 +207,7 @@ class WPXMLParser:
         elif name == 'wp:tag_name':
             self._name = None
         elif name == 'item':
-            print self._current
+            self._items.append(self._current)
             self._current = None
         elif name == 'title':
             self._name = None
@@ -121,8 +222,10 @@ class WPXMLParser:
         elif name == 'description':
             self._name = None
         elif name == 'content:encoded':
+            self._to_html('content')
             self._name = None
         elif name == 'excerpt:encoded':
+            self._to_html('excerpt')
             self._name = None
         elif name == 'wp:post_id':
             self._name = None
@@ -150,32 +253,22 @@ class WPXMLParser:
             self._name = None
         elif name == 'category':
             self._name = None
-            return
 
     def _character_data_handler(self, data):
-        if self._cdata is not None:
-            self._cdata += data
-            return
-        if self._current is not None and self._name is not None:
-            logging.debug('set %s = "%s"', self._name, data)
-            self._current[self._name] = data
-
-    def _start_cdata_section_handler(self):
-        self._cdata = u''
-
-    def _end_cdata_section_handler(self):
-        if self._current is not None and self._name is not None:
-            logging.debug('set %s = "%s"', self._name, self._cdata)
-            self._current[self._name] = self._cdata
-        self._cdata = None
+        self._data += data
 
     def parse(self, fobj):
-        self._parser.ParseFile(fobj)
+        self._xmlparser.ParseFile(fobj)
+        return {
+            'categories': self._categories,
+            'tags': self._tags,
+            'items': self._items,
+        }
 
 
 def main():
     argsparser = argparse.ArgumentParser(
-        description='Parse WordPress XML export to markdown')
+        description='Parse WordPress XML')
     argsparser.add_argument('xml', type=unicode, metavar='wordpress.xml')
     xml = argsparser.parse_args().xml
     with open(xml) as f:
