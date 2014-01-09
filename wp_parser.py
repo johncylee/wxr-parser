@@ -9,14 +9,15 @@ from xml.parsers import expat
 
 class WPHTMLParser(HTMLParser):
     """parse wordpress flavored html to regular (but not standalone) html
-    and retrieve related images.
+    and optionally retrieve related images.
 
     """
 
     NotParagraph = ('ul', 'ol', 'table', 'pre', 'blockquote', 'h1', 'h2', 'h3',
                     'h4', 'h5', 'h6')
 
-    def __init__(self):
+    def __init__(self, retrieve_imgs=True):
+        self._retrieve_imgs = retrieve_imgs
         self._reset()
         HTMLParser.__init__(self)
 
@@ -88,17 +89,10 @@ class WPHTMLParser(HTMLParser):
                 break
 
     def handle_startendtag(self, tag, attrs):
-        imgname = ''
-        if tag == 'img':
-            for key, value in attrs:
-                if key != 'src':
-                    continue
-                imgname = self.retrieve_file(value)
-                break
         html = '<' + tag
         for key, value in attrs:
-            if tag == 'img' and key == 'src':
-                value = imgname
+            if self._retrieve_imgs and tag == 'img' and key == 'src':
+                value = self.retrieve_file(value)
             html += ' %s="%s"' % (key, value)
         html += '/>'
         self._fragment += html
@@ -139,7 +133,7 @@ class WPHTMLParser(HTMLParser):
 
 class WPXMLParser(object):
 
-    def __init__(self):
+    def __init__(self, retrieve_imgs=True):
         self._categories = []
         self._tags = []
         self._items = []
@@ -151,7 +145,7 @@ class WPXMLParser(object):
         xmlparser.EndElementHandler = self._end_element_handler
         xmlparser.CharacterDataHandler = self._character_data_handler
         self._xmlparser = xmlparser
-        self._htmlparser = WPHTMLParser()
+        self._htmlparser = WPHTMLParser(retrieve_imgs)
 
     def _to_html(self, name):
         """what's in _current[_name] now is supposed to be wordpress flavored
@@ -318,10 +312,12 @@ class WPXMLParser(object):
 def main():
     argsparser = argparse.ArgumentParser(
         description='Parse WordPress XML')
+    argsparser.add_argument(
+        '--no-image', action='store_false', help='do not retrieve images')
     argsparser.add_argument('xml', type=unicode, metavar='wordpress.xml')
-    xml = argsparser.parse_args().xml
-    with open(xml) as f:
-        p = WPXMLParser()
+    args = argsparser.parse_args()
+    with open(args.xml) as f:
+        p = WPXMLParser(args.no_image)
         p.parse(f)
 
 
