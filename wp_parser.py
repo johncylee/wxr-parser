@@ -1,13 +1,15 @@
 import argparse
 import logging
+import re
 import sys
+import urllib2
 from HTMLParser import HTMLParser
 from xml.parsers import expat
 
 
-class WPHTMLTranslator(HTMLParser):
-    """translate wordpress flavored html to regular (but not standalone)
-    html.
+class WPHTMLParser(HTMLParser):
+    """parse wordpress flavored html to regular (but not standalone) html
+    and retrieve related images.
 
     """
 
@@ -23,6 +25,7 @@ class WPHTMLTranslator(HTMLParser):
         self._data = u''
         self._fragment = u''
         self._paragraph = True
+        self._imgs = []
 
     def reset(self):
         self._reset()
@@ -43,6 +46,22 @@ class WPHTMLTranslator(HTMLParser):
                 data = data + '</p>'
             data = data.replace('\n\n', '</p>\n\n<p>')
         self._data += data
+
+    def retrieve_file(self, url):
+        qmark_pos = url.rfind('?')
+        if qmark_pos != -1:
+            url = url[:qmark_pos]
+        filename = url.split('/')[-1]
+        if filename == '':
+            filename = 'image'
+        u = urllib2.urlopen(url)
+        logging.info('retrieving %s from "%s"', filename, url)
+        img = {
+            'filename': filename,
+            'data': u.read(),
+        }
+        self._imgs.append(img)
+        return filename
 
     def handle_starttag(self, tag, attrs):
         self._tagstack.append(tag)
@@ -69,22 +88,53 @@ class WPHTMLTranslator(HTMLParser):
                 break
 
     def handle_startendtag(self, tag, attrs):
+        imgname = ''
+        if tag == 'img':
+            for key, value in attrs:
+                if key != 'src':
+                    continue
+                imgname = self.retrieve_file(value)
+                break
         html = '<' + tag
-        for attr in attrs:
-            html += ' %s="%s"' % attr
+        for key, value in attrs:
+            if tag == 'img' and key == 'src':
+                value = imgname
+            html += ' %s="%s"' % (key, value)
         html += '/>'
         self._fragment += html
 
     def handle_data(self, data):
         self._fragment += data
 
-    def translate(self, data):
+    def handle_entityref(self, name):
+        self._fragment += '&%s;' % name
+
+    def handle_charref(self, name):
+        self._fragment += '&#%s;' % name
+
+    def parse(self, data):
+        # unix format
+        data = data.replace('\r\n', '\n')
+        preprocess = [
+            (re.compile(r'\n?\[sourcecode\]\n?'),
+             r'\n<pre class="unspecified">\n'),
+            (re.compile(r'\n?\[sourcecode language="(.+)"\]\n?'),
+             r'\n<pre class="\1">\n'),
+            (re.compile(r'\n?\[/sourcecode\]\n?'),
+             r'\n</pre>\n'),
+        ]
+        for reobj, rep in preprocess:
+            data = reobj.sub(rep, data)
         self.feed(data)
         self._flush()
         translated = self._data
+        imgs = self._imgs
         self.reset()
         logging.debug('translated: %s', translated)
-        return translated
+        return {
+            'html': translated,
+            'imgs': imgs,
+        }
 
 
 class WPXMLParser(object):
@@ -101,7 +151,7 @@ class WPXMLParser(object):
         xmlparser.EndElementHandler = self._end_element_handler
         xmlparser.CharacterDataHandler = self._character_data_handler
         self._xmlparser = xmlparser
-        self._htmltranslator = WPHTMLTranslator()
+        self._htmlparser = WPHTMLParser()
 
     def _to_html(self, name):
         """what's in _current[_name] now is supposed to be wordpress flavored
@@ -109,8 +159,8 @@ class WPXMLParser(object):
         and blank line means <p>.
 
         """
-        data = self._current[self._name]
-        self._current[name] = self._htmltranslator.translate(data)
+        parsed = self._htmlparser.parse(self._current[self._name])
+        self._current[name] = parsed
 
     def _flush(self):
         if self._current is not None and self._name is not None:
@@ -225,7 +275,6 @@ class WPXMLParser(object):
             self._to_html('content')
             self._name = None
         elif name == 'excerpt:encoded':
-            self._to_html('excerpt')
             self._name = None
         elif name == 'wp:post_id':
             self._name = None
