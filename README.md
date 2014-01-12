@@ -22,6 +22,9 @@ understand how it works.
 articles. This is for convenience but should only be used with
 caution.
 
+`wxr_backend` uses [Pandoc](http://johnmacfarlane.net/pandoc/) to
+translate html into Markdown, so Pandoc must be installed first.
+
 ## ToDo
 
 1.  unsupported wordpress tags:
