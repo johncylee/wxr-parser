@@ -24,9 +24,23 @@ def to_wintersmith(xml, path):
         # workaround if we really can't find a place to put `more'
         if markdown.find('<span class="more"></span>') == -1:
             markdown = '...\n\n<span class="more"></span>\n\n' + markdown
-        markdown = ('---\ntitle: "%s"\nauthor: "%s"\ndate: %s\n' \
-                    + 'template: article.jade\n---\n\n') \
-            % (item['title'], item['creator'], item['post_date_gmt']) + markdown
+        tags = []
+        if 'categories' in item:
+            tags.extend(item['categories'])
+        if 'tags' in item:
+            tags.extend(item['tags'])
+        tags = ', '.join(tags)
+        if tags == '':
+            markdown = ('---\ntitle: "%s"\nauthor: "%s"\ndate: %s\n' \
+                        + 'template: article.jade\n---\n\n') \
+                % (item['title'], item['creator'], item['post_date_gmt']) \
+                + markdown
+        else:
+            markdown = ('---\ntitle: "%s"\nauthor: "%s"\ndate: %s\n' \
+                        + 'tags: %s\n' \
+                        + 'template: article.jade\n---\n\n') \
+                % (item['title'], item['creator'], item['post_date_gmt'],
+                   tags) + markdown
         target = os.path.join(path, '%04d' % int(item['post_id']))
         if not os.path.exists(target):
             os.mkdir(target)
