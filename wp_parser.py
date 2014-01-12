@@ -132,6 +132,8 @@ class WPHTMLParser(HTMLParser):
 
 class WPXMLParser(object):
 
+    MultipleField = ('categories', 'tags')
+
     def __init__(self, retrieve_imgs=True):
         self._categories = []
         self._tags = []
@@ -158,7 +160,12 @@ class WPXMLParser(object):
     def _flush(self):
         if self._current is not None and self._name is not None:
             logging.debug('%s = "%s"', self._name, self._data)
-            self._current[self._name] = self._data
+            if self._data == 'Uncategorized':
+                pass
+            elif self._name in self.MultipleField:
+                self._current.setdefault(self._name, []).append(self._data)
+            else:
+                self._current[self._name] = self._data
         self._data = u''
 
     def _start_element_handler(self, name, attrs):
@@ -227,9 +234,9 @@ class WPXMLParser(object):
             self._name = 'attachment_url'
         elif name == 'category':
             if attrs['domain'] == 'category':
-                self._name = 'category'
+                self._name = 'categories'
             elif attrs['domain'] == 'post_tag':
-                self._name = 'tag'
+                self._name = 'tags'
 
     def _end_element_handler(self, name):
         self._flush()
