@@ -130,7 +130,7 @@ class WPHTMLParser(HTMLParser):
         }
 
 
-class WPXMLParser(object):
+class WXRParser(object):
 
     MultipleField = ('categories', 'tags')
 
@@ -323,7 +323,7 @@ def main():
     argsparser.add_argument('xml', type=unicode, metavar='wordpress.xml')
     args = argsparser.parse_args()
     with open(args.xml) as f:
-        p = WPXMLParser(args.no_image)
+        p = WXRParser(args.no_image)
         p.parse(f)
 
 

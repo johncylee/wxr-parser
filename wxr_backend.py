@@ -6,7 +6,7 @@ import os
 import os.path
 from subprocess import Popen, PIPE
 
-from wp_parser import WPXMLParser
+from wxr_parser import WXRParser
 
 
 def to_wintersmith(xml, path):
@@ -54,7 +54,7 @@ def to_wintersmith(xml, path):
 
 def wp_to_markdown(xml):
     with open(xml) as xml:
-        wp = WPXMLParser().parse(xml)
+        wp = WXRParser().parse(xml)
     postprocess = [
         (re.compile(r'~{3,} \{\.unspecified\}\n'),
          r'```\n'),
