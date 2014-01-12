@@ -55,11 +55,10 @@ class WPHTMLParser(HTMLParser):
         filename = url.split('/')[-1]
         if filename == '':
             filename = 'image'
-        u = urllib2.urlopen(url)
         logging.info('retrieving %s from "%s"', filename, url)
         img = {
             'filename': filename,
-            'data': u.read(),
+            'data': urllib2.urlopen(url).read(),
         }
         self._imgs.append(img)
         return filename
