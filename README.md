@@ -1,12 +1,12 @@
 # WXR Parser
 
 A simple WXR parser written in Python to parse the XML export from
-WordPress and store the information it in in Python's basic data
+WordPress and store the information in it in Python's basic data
 structures, i.e. dictionaries and lists. It also goes with a backend
 to export it in Markdown syntax suitable for
 [Wintersmith](http://wintersmith.io). In its current form, it can
 simplify the migration from WordPress to Wintersmith, but it's easy to
-be extended to export more formats.
+extend it to export more formats.
 
 It's created because the author failed to find a simple one to use.
 
